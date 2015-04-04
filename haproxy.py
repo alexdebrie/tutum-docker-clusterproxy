@@ -25,6 +25,7 @@ MAXCONN = os.getenv("MAXCONN", "4096")
 SSL = os.getenv("SSL", "")
 SSL_BIND_OPTIONS = os.getenv("SSL_BIND_OPTIONS", None)
 SSL_BIND_CIPHERS = os.getenv("SSL_BIND_CIPHERS", None)
+FORCE_SSL = os.getenv("FORCE_SSL", False)
 SESSION_COOKIE = os.getenv("SESSION_COOKIE")
 OPTION = os.getenv("OPTION", "redispatch, httplog, dontlognull, forwardfor").split(",")
 TIMEOUT = os.getenv("TIMEOUT", "connect 5000, client 50000, server 50000").split(",")
@@ -133,6 +134,9 @@ def update_cfg(cfg, backend_routes, vhost):
         frontend.append("reqadd X-Forwarded-Proto:\ https")
         frontend.append("redirect scheme https code 301 if !{ ssl_fc }"),
         frontend.append("bind 0.0.0.0:443 %s" % SSL)
+    if FORCE_SSL:
+        frontend.append("acl is_http hdr(X-Forwarded-Proto) http")
+        frontend.append("redirect scheme https code 301 if is_http")
     if vhost:
         added_vhost = {}
         for _, domain_name in vhost.iteritems():
