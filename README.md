@@ -1,7 +1,9 @@
 tutum-docker-clusterproxy
 =========================
 
-HAProxy image that balances between linked containers and, if launched in Tutum, 
+[![Deploy to Tutum](https://s.tutum.co/deploy-to-tutum.svg)](https://dashboard.tutum.co/stack/deploy/)
+
+HAProxy image that balances between linked containers and, if launched in Tutum,
 reconfigures itself when a linked cluster member joins or leaves
 
 
@@ -26,7 +28,7 @@ Configuration
 You can overwrite the following HAProxy configuration options:
 
 * `BACKEND_PORT` (default: `80`): The port where the web application backends are listening to.
-* `BACKEND_PORTS` (default **None**): The list of ports(comma separated) where the web application backends are listening to.(On works on Tutum at the moment)
+* `BACKEND_PORTS` (default **None**): The list of ports(comma separated) where the web application backends are listening to.(Only works on Tutum at the moment)
 * `FRONTEND_PORT` (default: `80`): The port where the load balancer is listening to.
 * `MODE` (default: `http`): Mode of load balancing for HAProxy. Possible values include: `http`, `tcp`, `health`.
 * `HDR` (default: `hdr`): "hdr" criteria in acl used in virtualhost. If set to `hdr_end`, for instance, haproxy will match all the subdomains'.
@@ -34,10 +36,13 @@ You can overwrite the following HAProxy configuration options:
 * `MAXCONN` (default: `4096`): Sets the maximum per-process number of concurrent connections.
 * `OPTION` (default: `redispatch`): Comma-separated list of HAProxy `option` entries to the `default` section.
 * `TIMEOUT` (default: `connect 5000,client 50000,server 50000`): Comma-separated list of HAProxy `timeout` entries to the `default` section.
+* `RSYSLOG_DESTINATION` (default: `127.0.0.1`): The rsyslog destination to where haproxy logs are sent
 * `SSL_CERT` (default: `**None**`): An optional certificate to use on the binded port. It should have both the private and public keys content. If set, port 443 will be used to handle HTTPS requests.
 * `SSL_BIND_OPTIONS` (default: `no-sslv3`): Optional. Explicitly set which SSL bind options will be used for the SSL server. This sets the HAProxy `ssl-default-bind-options` configuration setting. The default will allow only TLSv1.0+ to be used on the SSL server.
 * `SSL_BIND_CIPHERS` (default: `None`): Optional. Explicitly set which SSL ciphers will be used for the SSL server. This sets the HAProxy `ssl-default-bind-ciphers` configuration setting.
 * `VIRTUAL_HOST` (default: `**None**`): Optional. Let HAProxy route by domain name. Format `LINK_ALIAS=DOMAIN`, comma separated.
+* `STATS_PORT` (default: `1936`): Port for the haproxy stats section. If this port is published, stats can be accessed at `http://<host-ip>:<STATS_PORT>/`
+* `STATS_AUTH` (default: `stats:stats`): Username and password required to access the haproxy stats.
 
 Check [the HAProxy configuration manual](http://haproxy.1wt.eu/download/1.4/doc/configuration.txt) for more information on the above.
 
@@ -47,7 +52,7 @@ Usage within Tutum
 
 Launch the service you want to load-balance using Tutum.
 
-Then, launch the load balancer. To do this, select "Jumpstarts", "Proxies" and select `tutum/haproxy`. During the "Environment variables" step of the wizard, link to the service created earlier (the name of the link is not important), and add "Full Access" API role (this will allow HAProxy to be updated dynamically by querying Tutum's API). 
+Then, launch the load balancer. To do this, select "Jumpstarts", "Proxies" and select `tutum/haproxy`. During the "Environment variables" step of the wizard, link to the service created earlier (the name of the link is not important), and add "Full Access" API role (this will allow HAProxy to be updated dynamically by querying Tutum's API).
 
 That's it - the proxy container will start querying Tutum's API for an updated list of containers in the service and reconfigure itself automatically.
 
@@ -99,11 +104,11 @@ Example:
 
     docker run -d --name webapp1 tutum/hello-world
     docker run -d --name webapp2 tutum/hello-world
-    docker run -d --link webapp1:webapp1 --link webapp2:webapp2 -e VIRTUAL_HOST="webapp1=www.webapp1.com, webapp2=www.webapp2.com" -p 80:80 tutum/haproxy
+    docker run -d --link webapp1:webapp1 --link webapp2:webapp2 -e VIRTUAL_HOST="webapp1=www.webapp1.com, www.webapp1.org, webapp2=www.webapp2.com" -p 80:80 tutum/haproxy
 
 Notice that the format of `VIRTUAL_HOST` is `LINK_ALIAS=DOMAIN`, where `LINK_ALIAS` must match the *beginning* of the link name and `DOMAIN` is the HTTP host that you want the proxy to use to forward requests to that backend.
 
-In the example above, when you access `http://www.webapp1.com`, it will show the service running in container `webapp1`, and `http://www.webapp2.com` will go to container `webapp2`.
+In the example above, when you access `http://www.webapp1.com` or `http://www.webapp1.org`, it will show the service running in container `webapp1`, and `http://www.webapp2.com` will go to container `webapp2`.
 
 If you use the following:
 
@@ -119,11 +124,11 @@ When you access `http://www.webapp1.com`, it will show the service running in co
 
 Alternatively, virtual hosts can be configured by the proxy reading linked container environment variables (`VIRTUAL_HOST`). Here is an example:
 
-    docker run -d -e VIRTUAL_HOST=www.webapp1.com --name webapp1 tutum/hello-world
-    docker run -d -e VIRTUAL_HOST=www.webapp2.com --name webapp2 tutum/hello-world 
+    docker run -d -e VIRTUAL_HOST="www.webapp1.com, www.webapp1.org" --name webapp1 tutum/hello-world
+    docker run -d -e VIRTUAL_HOST=www.webapp2.com --name webapp2 tutum/hello-world
     docker run -d --link webapp1:webapp1 --link webapp2:webapp2 -p 80:80 tutum/haproxy
 
-In the example above, when you access `http://www.webapp1.com`, it will show the service running in container `webapp1`, and `http://www.webapp2.com` will go to container `webapp2`.
+In the example above, when you access `http://www.webapp1.com` or `http://www.webapp1.org`, it will show the service running in container `webapp1`, and `http://www.webapp2.com` will go to container `webapp2`.
 
 If you use the following:
 
@@ -139,6 +144,13 @@ When you access `http://www.webapp1.com`, it will show the service running in co
     docker run -d -e VIRTUAL_HOST=node.io --name webapp tutum/hello-world
     docker run -d --link webapp:webapp -e HDR="hdr_end" -p 80:80 tutum/haproxy
 
+#### I want to send all my logs to papertrailapp
+
+Replace `<subdomain>` and `<port>` with your the values matching your papertrailapp account:
+
+    docker run -d --name web1 tutum/hello-world
+    docker run -d --name web2 tutum/hello-world
+    docker run -it --env RSYSLOG_DESTINATION='<subdomain>.papertrailapp.com:<port>' -p 80:80 --link web1:web1 --link web2:web2 tutum/haproxy
 
 Topologies using virtual hosts
 ------------------------------
